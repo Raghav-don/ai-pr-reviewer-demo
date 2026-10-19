@@ -1,53 +1,50 @@
-# demo_app/core.py
-"""
-Core business logic for the demo app.
+"""Core business logic – safe version.
 
-This file contains several deliberate issues:
-- Hard‑coded API key (security)
-- Plain‑string SQL concatenation (SQL injection)
-- Inefficient nested loops (performance)
-- Missing docstring on a public function
-- Line longer than 88 characters (style)
+* Uses environment variables for any API‑like credentials.
+* Uses SQLite parameterised queries to avoid injection.
+* Provides clear docstrings and type hints.
 """
 
+import os
 import sqlite3
-from typing import List, Tuple  # imported but not used everywhere – intentional
+from typing import List, Tuple
 
-# ❌ Hard‑coded secret – should be loaded from env/vault
-API_KEY = "sk_test_000000000000000000000000000000000000"  # pragma: allowlist secret
+# ----------------------------------------------------------------------
+# Configuration – read from environment (never hard‑code secrets)
+# ----------------------------------------------------------------------
+API_KEY = os.getenv("DEMO_API_KEY", "")   # empty string if not set – safe placeholder
+# If you really need a key for a demo, set it in the repo‑level secret
+# (e.g. `DEMO_API_KEY=sk_test_123`) and reference it here.
 
 def get_user_data(user_id: int) -> List[Tuple]:
-    """Fetch all rows for a given user from the local SQLite demo DB.
-    
-    Note: This function is vulnerable to SQL injection because the user_id
-    is directly concatenated into the query string.
+    """Fetch rows for a given user from the local SQLite demo DB.
+
+    Uses a parameterised query – completely safe from SQL injection.
     """
     conn = sqlite3.connect("demo.db")
     cursor = conn.cursor()
-    
-    # ❌ SQL Injection vulnerability
-    query = f"SELECT * FROM users WHERE id = {user_id}"
-    cursor.execute(query)
-    
+
+    # ✅ Parameterised query
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
     rows = cursor.fetchall()
     conn.close()
     return rows
 
+
 def process_all_users() -> None:
-    """Demo of an O(N^2) algorithm – intentionally slow for large data."""
-    # Pretend we have a list of user IDs we need to process
-    user_ids = list(range(1, 101))  # 1..100
-    
-    # ❌ Nested loops → O(N^2)
-    for i in user_ids:
-        for j in user_ids:
-            # Do nothing useful – just waste CPU cycles
-            _ = i * j
+    """Demo of a linear‑time operation – O(N) instead of O(N²)."""
+    user_ids = list(range(1, 101))  # 1 … 100
 
-    # Another long line that exceeds the typical 88‑char limit
-    # This line is deliberately long to trigger a style warning from formatters/linters.
-    print("Processing completed for all user IDs: " + ", ".join(str(uid) for uid in user_ids))
+    # ✅ Single loop – O(N)
+    for uid in user_ids:
+        # Example operation: compute a trivial value (could be any real work)
+        _ = uid * 2
 
-# ❌ Missing docstring for a public helper (style / documentation issue)
-def helper(x, y):
+    # ✅ Line length kept well under the typical 88‑char limit
+    print("Processing completed for all user IDs: " +
+          ", ".join(str(uid) for uid in user_ids))
+
+
+def helper(x: int, y: int) -> int:
+    """Simple addition helper – fully typed and documented."""
     return x + y

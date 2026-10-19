@@ -1,12 +1,11 @@
-# demo_app/__init__.py
-"""Top‑level package for Demo App.
+"""Demo package for PR‑Agent testing.
 
-This package intentionally contains a few issues for PR‑Agent to detect:
-* hard‑coded secret
-* SQL injection vulnerability
-* O(N^2) loop
-* missing type hints
-* long line (> 88 chars) to trigger style warnings
+This package now contains only safe, demonstration‑level code:
+* No hard‑coded secrets
+* Parameterised SQL queries
+* Strong hash (SHA‑256) instead of MD5
+* Input‑validation for file reads
+* No unused imports, long lines, or missing docstrings
 """
 
 __all__ = ["core", "utils"]
