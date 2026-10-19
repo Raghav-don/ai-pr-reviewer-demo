@@ -3,7 +3,6 @@
 
 import os
 import hashlib
-import base64
 
 # ✅ Use PBKDF2-HMAC-SHA256 for password hashing
 def hash_password(password: str) -> str:
