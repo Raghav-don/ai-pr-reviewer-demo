@@ -1,7 +1,6 @@
 # demo_app/utils.py
 """Utility helpers – contains a few more issues for PR‑Agent to notice."""
 
-import os
 import hashlib
 
 # ✅ Use PBKDF2-HMAC-SHA256 for password hashing
