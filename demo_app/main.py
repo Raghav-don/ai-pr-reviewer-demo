@@ -7,7 +7,7 @@ useful if you ever want to run the code locally to see the behaviour.
 
 if __name__ == "__main__":
     from .core import get_user_data, process_all_users
-    from .utils import hash_password, read_file_safely, dummy_s3_upload
+    from .utils import hash_password, dummy_s3_upload
 
     # Demo calls
     print(get_user_data(42))
