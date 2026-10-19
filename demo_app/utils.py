@@ -31,9 +31,6 @@ def dummy_s3_upload(data: bytes) -> None:
     # In a real app you would never embed keys like this.
     print(f"Uploading {len(data)} bytes to S3 using key {AWS_ACCESS_KEY}")
 
-# ❌ Unused import (style)
-import json  # noqa: F401  – we keep it to show an unused import warning
-
 # ❌ Line longer than 88 characters (style)
 def long_running_task() -> None:
     """Simulate a long running task by sleeping a lot – just for demo."""
