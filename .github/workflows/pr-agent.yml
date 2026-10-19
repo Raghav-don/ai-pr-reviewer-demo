@@ -1,20 +1,35 @@
+name: PR-Agent Review
+
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, synchronize]
-  issue_comment:
+    types: [opened, reopened, synchronize, ready_for_review]
+
 jobs:
-  pr_agent_job:
-    if: ${{ github.event.sender.type != 'Bot' }}
+  pr-agent:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    name: Run pr agent on every pull request, respond to user comments
+      pull-requests: write   # needed so the bot can comment / request changes
+      contents: read         # needed for the checkout step
     steps:
-      - name: PR Agent action step
-        id: pragent
-        uses: the-pr-agent/pr-agent@main
-        env:
-          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # full history required for PR‑Agent to analyse the diff
+
+      - name: Run PR-Agent (review)
+        uses: the-pr-agent/pr-agent-action@v0.48.0   # <-- note the "-action"
+        with:
+          # The GitHub token is provided automatically; just forward it
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+          # ---- LLM provider secret (choose the one you use) ----
+          openai_key: ${{ secrets.OPENAI_API_KEY }}
+          # anthropic_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # google_key: ${{ secrets.GOOGLE_API_KEY }}
+
+          # Optional: choose which PR‑Agent sub‑command to run.
+          # Leave unset for the default "review" (posts a review comment).
+          # pr_agent_command: review   # you can also set: describe, improve, ask, similar_issue
+
+          # Optional: extra instructions to steer the AI.
+          # extra_instructions: "Focus on security issues and performance anti‑patterns."
