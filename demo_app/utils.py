@@ -5,11 +5,15 @@ import os
 import hashlib
 import base64
 
-# ❌ Insecure use of MD5 for cryptographic purposes
+# ✅ Use PBKDF2-HMAC-SHA256 for password hashing
 def hash_password(password: str) -> str:
-    """Return an MD5 hash of the password – **INSECURE** for real use."""
-    # ❌ MD5 is cryptographically broken
-    return hashlib.md5(password.encode()).hexdigest()
+    """Return a salted PBKDF2-HMAC-SHA256 password hash string."""
+    salt = os.urandom(16)
+    iterations = 600_000
+    derived_key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    salt_b64 = base64.b64encode(salt).decode("ascii")
+    hash_b64 = base64.b64encode(derived_key).decode("ascii")
+    return f"pbkdf2_sha256${iterations}${salt_b64}${hash_b64}"
 
 # ❌ Potential path traversal if `filename` comes from user input
 def read_file_safely(filename: str) -> str:
