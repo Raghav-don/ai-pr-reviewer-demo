@@ -1,7 +1,6 @@
-name: PR Agent (Gemini)
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
   issue_comment:
 jobs:
   pr_agent_job:
@@ -11,14 +10,18 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
+    name: Run pr agent on every pull request, respond to user comments
     steps:
       - name: PR Agent action step
+        id: pragent
         uses: the-pr-agent/pr-agent@main
         env:
+          # For the github_action_runner (explicitly reads these)
+          OPENAI_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_BASE: https://openrouter.ai/api/v1
+          # For Dynaconf settings (envvar_prefix=False)
+          CONFIG__MODEL: openrouter/openai/gpt-4o-mini
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER__API_BASE: https://openrouter.ai/api/v1
+          # GitHub token
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          config.model: "gemini/gemini-3.8-flash"
-          config.fallback_models: '["gemini/gemini-3.8-flash"]'
-          GOOGLE_AI_STUDIO.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          github_action_config.auto_review: "true"
-          github_action_config.auto_describe: "true"
-          github_action_config.auto_improve: "true"
