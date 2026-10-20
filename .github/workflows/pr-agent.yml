@@ -11,15 +11,9 @@ jobs:
       pull-requests: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Run PR-Agent (review)
-        uses: the-pr-agent/pr-agent-action@v0.48.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          openai_key: ${{ secrets.OPENROUTER_API_KEY }}
-          openai_api_base: https://openrouter.ai/api/v1
-          # pr_agent_command: review   # default; change if you want describe/improve/ask
-          # extra_instructions: "Focus on security issues and performance anti‑patterns."
+      - name: PR Agent action step
+        id: pragent
+        uses: the-pr-agent/pr-agent@main
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
