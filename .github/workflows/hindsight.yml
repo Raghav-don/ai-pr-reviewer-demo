@@ -1,0 +1,104 @@
+name: "Hindsight Risk Analysis"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * 0'  # Weekly on Sunday 2 AM
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  hindsight:
+    name: Hindsight Risk Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for analysis
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Hindsight
+        run: |
+          pip install hindsight
+
+      - name: Run Hindsight Analysis
+        id: hindsight
+        run: |
+          # Analyze last 90 days of history
+          hindsight analyze \
+            --repo . \
+            --since 90d \
+            --format json \
+            --output hindsight-report.json
+          
+          # Also generate markdown summary for PR comment
+          hindsight analyze \
+            --repo . \
+            --since 90d \
+            --format markdown \
+            --output hindsight-summary.md
+
+      - name: Upload Hindsight Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: hindsight-report
+          path: |
+            hindsight-report.json
+            hindsight-summary.md
+          retention-days: 30
+
+      - name: Post Hindsight Summary to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('hindsight-summary.md', 'utf8');
+            
+            if (summary.trim()) {
+              const body = `## 📊 Hindsight Risk Analysis\n\n${summary}\n\n---\n*Generated from last 90 days of git history*`;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: body
+              });
+            }
+
+      - name: Fail on High Risk (optional)
+        run: |
+          # Check if any files have risk score > 7
+          python3 << 'EOF'
+          import json
+          with open('hindsight-report.json') as f:
+              data = json.load(f)
+          
+          high_risk = []
+          for file_data in data.get('files', []):
+              risk = file_data.get('risk_score', 0)
+              if risk > 7:
+                  high_risk.append(f"{file_data['path']}: risk={risk:.1f}")
+          
+          if high_risk:
+              print("::warning::High-risk files detected:")
+              for f in high_risk:
+                  print(f"  {f}")
+              # Exit with error to fail the check (uncomment to enable)
+              # exit(1)
+          else:
+              print("✅ No high-risk files detected (threshold: 7.0)")
+          EOF
