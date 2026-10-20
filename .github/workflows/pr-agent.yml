@@ -16,8 +16,12 @@ jobs:
         id: pragent
         uses: the-pr-agent/pr-agent@main
         env:
-          openai_key: ${{ secrets.OPENROUTER_API_KEY }}
-          openai_api_base: https://openrouter.ai/api/v1
-          model: openrouter/openai/gpt-4o-mini
-      
+          # For the github_action_runner (explicitly reads these)
+          OPENAI_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_BASE: https://openrouter.ai/api/v1
+          # For Dynaconf settings (envvar_prefix=False)
+          CONFIG__MODEL: openrouter/openai/gpt-4o-mini
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER__API_BASE: https://openrouter.ai/api/v1
+          # GitHub token
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
