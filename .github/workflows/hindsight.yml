@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '0 2 * * 0'  # Weekly on Sunday 2 AM
+    - cron: '0 2 * * 0'
 
 permissions:
   contents: read
@@ -22,7 +22,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history needed for analysis
+          fetch-depth: 0
 
       - name: Run Git Risk Analysis
         id: risk
@@ -31,44 +31,48 @@ jobs:
           SINCE_DAYS=90
           RISK_THRESHOLD=7
           
-          # Get commits from last 90 days (using Python for cross-platform date)
+          # Get commits from last 90 days
           SINCE_DATE=$(python3 -c "from datetime import datetime, timedelta; print((datetime.now() - timedelta(days=$SINCE_DAYS)).strftime('%Y-%m-%d'))")
+          echo "SINCE_DATE=$SINCE_DATE"
           
           echo "## 📊 Git Risk Analysis (last $SINCE_DAYS days)" > risk-summary.md
           echo "" >> risk-summary.md
           echo "| File | Commits | Authors | Lines Changed | Risk Score |" >> risk-summary.md
           echo "|------|---------|---------|---------------|------------|" >> risk-summary.md
           
-          # Analyze each file in the repo (excluding docs, tests, config)
+          # Test basic git log
+          echo "Testing git log..."
+          git log --since="$SINCE_DATE" --pretty=format: --name-only | head -20
+          
+          # Analyze each file
           git log --since="$SINCE_DATE" --pretty=format: --name-only | \
             grep -vE '^\s*$' | \
             grep -vE '\.(md|txt|yml|yaml|toml|json|lock)$' | \
             grep -vE '(^docs/|^tests/|^test_|\.test\.|\.spec\.)' | \
-            sort | uniq -c | sort -rn | head -30 | while read count file; do
+            sort | uniq -c | sort -rn | head -5 | while read count file; do
             
-            # Get unique authors for this file
+            echo "Processing: $file (count=$count)"
+            
+            # Get unique authors
             authors=$(git log --since="$SINCE_DATE" --pretty=format:"%an" -- "$file" | sort -u | wc -l)
+            echo "  Authors: $authors"
             
-            # Get lines added/removed
+            # Get churn
             stats=$(git log --since="$SINCE_DATE" --pretty=format: --numstat -- "$file" | awk '{added+=$1; removed+=$2} END {print added+removed}')
+            echo "  Stats: ${stats:-0}"
             
-            # Calculate risk score (0-10)
-            # Factors: high commit frequency, low author diversity, high churn
-            risk_score=$(python3 << PYEOF
-import math
+            # Risk score via Python
+            risk_score=$(python3 -c "
 commits = $count
 author_count = $authors
 churn = ${stats:-0}
-
-# Normalize factors
-commit_factor = min(commits / 20.0, 1.0) * 4  # max 4 points
-author_factor = (1.0 - min(author_count / 3.0, 1.0)) * 3  # max 3 points (fewer authors = higher risk)
-churn_factor = min(churn / 500.0, 1.0) * 3  # max 3 points
-
+commit_factor = min(commits / 20.0, 1.0) * 4
+author_factor = (1.0 - min(author_count / 3.0, 1.0)) * 3
+churn_factor = min(churn / 500.0, 1.0) * 3
 risk = commit_factor + author_factor + churn_factor
-print(f"{risk:.1f}")
-PYEOF
-)
+print(f'{risk:.1f}')
+            ")
+            echo "  Risk: $risk_score"
             
             printf "| %s | %d | %d | %s | %.1f |\n" "$file" "$count" "$authors" "${stats:-0}" "$risk_score" >> risk-summary.md
           done
@@ -77,7 +81,7 @@ PYEOF
           echo "**Risk Score Formula:** Commit Frequency (40%) + Author Concentration (30%) + Code Churn (30%)" >> risk-summary.md
           echo "*Scores > 7 indicate files needing extra review attention.*" >> risk-summary.md
           
-          # Also generate JSON for programmatic use
+          # Generate JSON
           python3 << 'PYEOF' > risk-report.json
 import subprocess
 import json
@@ -87,7 +91,6 @@ from datetime import datetime, timedelta
 since_days = 90
 since_date = (datetime.now() - timedelta(days=since_days)).strftime('%Y-%m-%d')
 
-# Get file stats
 result = subprocess.run([
     'git', 'log', f'--since={since_date}', '--pretty=format:', '--name-only'
 ], capture_output=True, text=True)
@@ -105,16 +108,13 @@ for line in result.stdout.strip().split('\n'):
         continue
     files[line] = files.get(line, 0) + 1
 
-# Get details for top files
 report = {"files": [], "summary": {}}
 for file, count in sorted(files.items(), key=lambda x: -x[1])[:30]:
-    # Authors
     authors_result = subprocess.run([
         'git', 'log', f'--since={since_date}', '--pretty=format:%an', '--', file
     ], capture_output=True, text=True)
     author_count = len(set(authors_result.stdout.strip().split('\n'))) if authors_result.stdout.strip() else 0
     
-    # Churn
     stats_result = subprocess.run([
         'git', 'log', f'--since={since_date}', '--pretty=format:', '--numstat', '--', file
     ], capture_output=True, text=True)
@@ -128,7 +128,6 @@ for file, count in sorted(files.items(), key=lambda x: -x[1])[:30]:
                 except:
                     pass
     
-    # Risk calculation
     commit_factor = min(count / 20.0, 1.0) * 4
     author_factor = (1.0 - min(author_count / 3.0, 1.0)) * 3
     churn_factor = min(churn / 500.0, 1.0) * 3
@@ -174,6 +173,9 @@ for f in data['files']:
           else
             echo "✅ No high-risk files detected (threshold: $RISK_THRESHOLD)"
           fi
+          
+          echo "Risk summary generated:"
+          cat risk-summary.md
 
       - name: Upload Risk Report
         uses: actions/upload-artifact@v4
