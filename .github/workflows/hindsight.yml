@@ -1,4 +1,4 @@
-name: "Hindsight Risk Analysis"
+name: "Git Risk Analysis"
 
 on:
   pull_request:
@@ -14,8 +14,8 @@ permissions:
   checks: write
 
 jobs:
-  hindsight:
-    name: Hindsight Risk Analysis
+  risk-analysis:
+    name: Git Risk Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,52 +24,175 @@ jobs:
         with:
           fetch-depth: 0  # Full history needed for analysis
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-
-      - name: Install Hindsight
+      - name: Run Git Risk Analysis
+        id: risk
         run: |
-          pip install hindsight
-
-      - name: Run Hindsight Analysis
-        id: hindsight
-        run: |
-          # Analyze last 90 days of history
-          hindsight analyze \
-            --repo . \
-            --since 90d \
-            --format json \
-            --output hindsight-report.json
+          # Configuration
+          SINCE_DAYS=90
+          RISK_THRESHOLD=7
           
-          # Also generate markdown summary for PR comment
-          hindsight analyze \
-            --repo . \
-            --since 90d \
-            --format markdown \
-            --output hindsight-summary.md
+          # Get commits from last 90 days
+          SINCE_DATE=$(date -d "$SINCE_DAYS days ago" +%Y-%m-%d)
+          
+          echo "## 📊 Git Risk Analysis (last $SINCE_DAYS days)" > risk-summary.md
+          echo "" >> risk-summary.md
+          echo "| File | Commits | Authors | Lines Changed | Risk Score |" >> risk-summary.md
+          echo "|------|---------|---------|---------------|------------|" >> risk-summary.md
+          
+          # Analyze each file in the repo (excluding docs, tests, config)
+          git log --since="$SINCE_DATE" --pretty=format: --name-only | \
+            grep -vE '^\s*$' | \
+            grep -vE '\.(md|txt|yml|yaml|toml|json|lock)$' | \
+            grep -vE '(^docs/|^tests/|^test_|\.test\.|\.spec\.)' | \
+            sort | uniq -c | sort -rn | head -30 | while read count file; do
+            
+            # Get unique authors for this file
+            authors=$(git log --since="$SINCE_DATE" --pretty=format:"%an" -- "$file" | sort -u | wc -l)
+            
+            # Get lines added/removed
+            stats=$(git log --since="$SINCE_DATE" --pretty=format: --numstat -- "$file" | awk '{added+=$1; removed+=$2} END {print added+removed}')
+            
+            # Calculate risk score (0-10)
+            # Factors: high commit frequency, low author diversity, high churn
+            risk_score=$(python3 << PYEOF
+import math
+commits = $count
+author_count = $authors
+churn = ${stats:-0}
 
-      - name: Upload Hindsight Report
+# Normalize factors
+commit_factor = min(commits / 20.0, 1.0) * 4  # max 4 points
+author_factor = (1.0 - min(author_count / 3.0, 1.0)) * 3  # max 3 points (fewer authors = higher risk)
+churn_factor = min(churn / 500.0, 1.0) * 3  # max 3 points
+
+risk = commit_factor + author_factor + churn_factor
+print(f"{risk:.1f}")
+PYEOF
+)
+            
+            printf "| %s | %d | %d | %s | %.1f |\n" "$file" "$count" "$authors" "${stats:-0}" "$risk_score" >> risk-summary.md
+          done
+          
+          echo "" >> risk-summary.md
+          echo "**Risk Score Formula:** Commit Frequency (40%) + Author Concentration (30%) + Code Churn (30%)" >> risk-summary.md
+          echo "*Scores > 7 indicate files needing extra review attention.*" >> risk-summary.md
+          
+          # Also generate JSON for programmatic use
+          python3 << 'PYEOF' > risk-report.json
+import subprocess
+import json
+import sys
+
+since_days = 90
+since_date = subprocess.check_output(['date', '-d', f'{since_days} days ago', '+%Y-%m-%d']).decode().strip()
+
+# Get file stats
+result = subprocess.run([
+    'git', 'log', f'--since={since_date}', '--pretty=format:', '--name-only'
+], capture_output=True, text=True)
+
+files = {}
+for line in result.stdout.strip().split('\n'):
+    line = line.strip()
+    if not line:
+        continue
+    if line.endswith(('.md', '.txt', '.yml', '.yaml', '.toml', '.json', '.lock')):
+        continue
+    if any(line.startswith(p) for p in ['docs/', 'tests/', 'test_']):
+        continue
+    if '.test.' in line or '.spec.' in line:
+        continue
+    files[line] = files.get(line, 0) + 1
+
+# Get details for top files
+report = {"files": [], "summary": {}}
+for file, count in sorted(files.items(), key=lambda x: -x[1])[:30]:
+    # Authors
+    authors_result = subprocess.run([
+        'git', 'log', f'--since={since_date}', '--pretty=format:%an', '--', file
+    ], capture_output=True, text=True)
+    author_count = len(set(authors_result.stdout.strip().split('\n'))) if authors_result.stdout.strip() else 0
+    
+    # Churn
+    stats_result = subprocess.run([
+        'git', 'log', f'--since={since_date}', '--pretty=format:', '--numstat', '--', file
+    ], capture_output=True, text=True)
+    churn = 0
+    for stat_line in stats_result.stdout.strip().split('\n'):
+        if stat_line.strip():
+            parts = stat_line.split('\t')
+            if len(parts) >= 2:
+                try:
+                    churn += int(parts[0]) + int(parts[1])
+                except:
+                    pass
+    
+    # Risk calculation
+    commit_factor = min(count / 20.0, 1.0) * 4
+    author_factor = (1.0 - min(author_count / 3.0, 1.0)) * 3
+    churn_factor = min(churn / 500.0, 1.0) * 3
+    risk = round(commit_factor + author_factor + churn_factor, 1)
+    
+    report["files"].append({
+        "path": file,
+        "commits": count,
+        "authors": author_count,
+        "churn": churn,
+        "risk_score": risk
+    })
+
+report["summary"] = {
+    "since_days": since_days,
+    "total_files_analyzed": len(files),
+    "high_risk_count": len([f for f in report["files"] if f["risk_score"] > 7]),
+    "threshold": 7
+}
+
+json.dump(report, sys.stdout, indent=2)
+PYEOF
+          
+          # Check for high-risk files
+          HIGH_RISK=$(python3 -c "
+import json
+with open('risk-report.json') as f:
+    data = json.load(f)
+high = [f for f in data['files'] if f['risk_score'] > 7]
+print(len(high))
+          ")
+          
+          if [ "$HIGH_RISK" -gt 0 ]; then
+            echo "::warning::Found $HIGH_RISK high-risk files (score > 7)"
+            python3 -c "
+import json
+with open('risk-report.json') as f:
+    data = json.load(f)
+for f in data['files']:
+    if f['risk_score'] > 7:
+        print(f\"  {f['path']}: risk={f['risk_score']:.1f} (commits={f['commits']}, authors={f['authors']}, churn={f['churn']})\")
+            "
+          else
+            echo "✅ No high-risk files detected (threshold: $RISK_THRESHOLD)"
+          fi
+
+      - name: Upload Risk Report
         uses: actions/upload-artifact@v4
         with:
-          name: hindsight-report
+          name: git-risk-report
           path: |
-            hindsight-report.json
-            hindsight-summary.md
+            risk-summary.md
+            risk-report.json
           retention-days: 30
 
-      - name: Post Hindsight Summary to PR
+      - name: Post Risk Summary to PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const summary = fs.readFileSync('hindsight-summary.md', 'utf8');
+            const summary = fs.readFileSync('risk-summary.md', 'utf8');
             
             if (summary.trim()) {
-              const body = `## 📊 Hindsight Risk Analysis\n\n${summary}\n\n---\n*Generated from last 90 days of git history*`;
+              const body = `## 📊 Git Risk Analysis\n\n${summary}\n\n---\n*Analysis based on last 90 days of git history*`;
               
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -78,27 +201,3 @@ jobs:
                 body: body
               });
             }
-
-      - name: Fail on High Risk (optional)
-        run: |
-          # Check if any files have risk score > 7
-          python3 << 'EOF'
-          import json
-          with open('hindsight-report.json') as f:
-              data = json.load(f)
-          
-          high_risk = []
-          for file_data in data.get('files', []):
-              risk = file_data.get('risk_score', 0)
-              if risk > 7:
-                  high_risk.append(f"{file_data['path']}: risk={risk:.1f}")
-          
-          if high_risk:
-              print("::warning::High-risk files detected:")
-              for f in high_risk:
-                  print(f"  {f}")
-              # Exit with error to fail the check (uncomment to enable)
-              # exit(1)
-          else:
-              print("✅ No high-risk files detected (threshold: 7.0)")
-          EOF
