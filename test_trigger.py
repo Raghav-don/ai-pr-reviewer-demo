@@ -50,3 +50,4 @@ if __name__ == "__main__":
     print("Test file for PR Agent")
     print(f"Sum: {calculate_sum([1, 2, 3, 4, 5])}")
     print(f"Query: {get_user_query('admin')}")# Trigger
+# test
