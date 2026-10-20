@@ -1,0 +1,25 @@
+name: "Test Runner"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [trigger-pr-agent-test]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test basic commands
+        run: |
+          echo "Testing date..."
+          python3 -c "from datetime import datetime, timedelta; print((datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d'))"
+          echo "Testing git log..."
+          git log --since="2024-07-01" --pretty=format: --name-only | head -5
+          echo "Testing python heredoc..."
+          python3 << 'EOF'
+print("Hello from heredoc")
+EOF
+          echo "All tests passed"
