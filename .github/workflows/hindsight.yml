@@ -31,8 +31,8 @@ jobs:
           SINCE_DAYS=90
           RISK_THRESHOLD=7
           
-          # Get commits from last 90 days
-          SINCE_DATE=$(date -d "$SINCE_DAYS days ago" +%Y-%m-%d)
+          # Get commits from last 90 days (using Python for cross-platform date)
+          SINCE_DATE=$(python3 -c "from datetime import datetime, timedelta; print((datetime.now() - timedelta(days=$SINCE_DAYS)).strftime('%Y-%m-%d'))")
           
           echo "## 📊 Git Risk Analysis (last $SINCE_DAYS days)" > risk-summary.md
           echo "" >> risk-summary.md
@@ -82,9 +82,10 @@ PYEOF
 import subprocess
 import json
 import sys
+from datetime import datetime, timedelta
 
 since_days = 90
-since_date = subprocess.check_output(['date', '-d', f'{since_days} days ago', '+%Y-%m-%d']).decode().strip()
+since_date = (datetime.now() - timedelta(days=since_days)).strftime('%Y-%m-%d')
 
 # Get file stats
 result = subprocess.run([
